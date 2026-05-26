@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, memo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { listMembers } from "@/lib/queries";
 import {
@@ -20,8 +20,7 @@ import {
   MemberStatus,
 } from "@/lib/types";
 import { StatusBadge } from "@/components/admin/StatusBadge";
-import { MemberDrawer } from "@/components/admin/MemberDrawer";
-import { NewMemberModal } from "@/components/admin/NewMemberModal";
+import dynamic from "next/dynamic";
 import {
   Table,
   TableBody,
@@ -38,6 +37,15 @@ import { Search, Plus, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useDebounce } from "@/lib/hooks";
+
+const MemberDrawer = dynamic(
+  () => import("@/components/admin/MemberDrawer").then((m) => m.MemberDrawer),
+  { ssr: false }
+);
+const NewMemberModal = dynamic(
+  () => import("@/components/admin/NewMemberModal").then((m) => m.NewMemberModal),
+  { ssr: false }
+);
 
 const PAGE_SIZE = 20;
 
@@ -65,6 +73,42 @@ function TypeBadge({ tipo }: { tipo: string | null | undefined }) {
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
+
+const MemberRow = memo(function MemberRow({
+  m,
+  bal,
+  onClick,
+}: {
+  m: Member;
+  bal: { pontos: number; credito: number } | undefined;
+  onClick: () => void;
+}) {
+  return (
+    <TableRow
+      className="cursor-pointer hover:bg-beige/50 border-beige transition-colors"
+      onClick={onClick}
+    >
+      <TableCell className="font-medium text-ink text-sm">{m.cliente_nome}</TableCell>
+      <TableCell className="text-sm text-muted-foreground">{m.cliente_id}</TableCell>
+      <TableCell><TypeBadge tipo={m.tipo} /></TableCell>
+      <TableCell>
+        <StatusBadge status={(m.status ?? "pendente") as MemberStatus} />
+      </TableCell>
+      <TableCell className="text-sm text-right font-medium text-ink">
+        {bal != null ? bal.pontos.toLocaleString("pt-BR") : <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="text-sm text-right font-medium text-gold">
+        {bal != null ? formatCurrency(bal.credito) : <span className="text-muted-foreground">—</span>}
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {m.indicada_por_nome ?? "—"}
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {format(new Date(m.criado_em), "dd/MM/yyyy", { locale: ptBR })}
+      </TableCell>
+    </TableRow>
+  );
+});
 
 export default function ClientesPage() {
   const [members, setMembers] = useState<Member[]>([]);
@@ -183,35 +227,14 @@ export default function ClientesPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  members.map((m) => {
-                    const bal = balances[m.cliente_id];
-                    return (
-                      <TableRow
-                        key={m.cliente_id}
-                        className="cursor-pointer hover:bg-beige/50 border-beige transition-colors"
-                        onClick={() => openMemberDrawer(m)}
-                      >
-                        <TableCell className="font-medium text-ink text-sm">{m.cliente_nome}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{m.cliente_id}</TableCell>
-                        <TableCell><TypeBadge tipo={m.tipo} /></TableCell>
-                        <TableCell>
-                          <StatusBadge status={(m.status ?? "pendente") as MemberStatus} />
-                        </TableCell>
-                        <TableCell className="text-sm text-right font-medium text-ink">
-                          {bal != null ? bal.pontos.toLocaleString("pt-BR") : <span className="text-muted-foreground">—</span>}
-                        </TableCell>
-                        <TableCell className="text-sm text-right font-medium text-gold">
-                          {bal != null ? formatCurrency(bal.credito) : <span className="text-muted-foreground">—</span>}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {m.indicada_por_nome ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {format(new Date(m.criado_em), "dd/MM/yyyy", { locale: ptBR })}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                  members.map((m) => (
+                    <MemberRow
+                      key={m.cliente_id}
+                      m={m}
+                      bal={balances[m.cliente_id]}
+                      onClick={() => openMemberDrawer(m)}
+                    />
+                  ))
                 )}
               </TableBody>
             </Table>

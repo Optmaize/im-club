@@ -5,10 +5,26 @@ import {
   getRecentAttendances,
 } from "@/lib/queries";
 import { MetricsCards } from "@/components/admin/MetricsCards";
-import { MembersChart } from "@/components/admin/MembersChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import dynamic from "next/dynamic";
+
+// recharts só carrega no client, fora do bundle inicial
+const MembersChart = dynamic(
+  () => import("@/components/admin/MembersChart").then((m) => m.MembersChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="border-0 shadow-sm bg-white rounded-xl p-6">
+        <div className="h-4 w-40 bg-stone-100 animate-pulse rounded mb-6" />
+        <div className="h-[220px] bg-stone-100 animate-pulse rounded" />
+      </div>
+    ),
+  }
+);
+
+export const revalidate = 60;
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("pt-BR", {

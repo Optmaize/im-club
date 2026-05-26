@@ -11,6 +11,8 @@ import { ptBR } from "date-fns/locale";
 import { AlertTriangle, CreditCard } from "lucide-react";
 import { ExportCSVButton } from "@/components/admin/ExportCSVButton";
 
+export const revalidate = 300;
+
 export default async function RelatoriosPage() {
   const supabase = await createClient();
   const [neverUsed, expiring] = await Promise.all([
