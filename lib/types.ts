@@ -58,6 +58,29 @@ export interface Attendance {
   processado_em: string | null;
 }
 
+// ─── AVEC ─────────────────────────────────────────────────────────────────────
+
+export interface AvecCliente {
+  id: string;
+  cliente_id: string; // internal AVEC ID (not phone)
+  nome: string | null;
+  email: string | null;
+  telefone: string | null;
+  celular: string | null; // phone = im_club_membros.cliente_id
+  aniversario: string | null;
+  sincronizado_em: string | null;
+  atualizado_em: string | null;
+}
+
+export interface AvecClienteWithStatus extends AvecCliente {
+  im_status: MemberStatus | null;
+  im_tipo: MemberType | null;
+}
+
+export type AvecFilter = "todos" | "no_clube" | "fora_clube" | "aniversariantes";
+
+// ─── Admin metrics ────────────────────────────────────────────────────────────
+
 export interface AdminMetrics {
   totalAtivos: number;
   totalPendentes: number;

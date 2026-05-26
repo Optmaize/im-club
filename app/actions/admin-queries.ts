@@ -1,7 +1,10 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { PointRecord, CreditRecord, Member, Attendance, MemberWithBalance } from "@/lib/types";
+import {
+  PointRecord, CreditRecord, Member, Attendance, MemberWithBalance,
+  AvecClienteWithStatus, AvecFilter, MemberStatus, MemberType,
+} from "@/lib/types";
 
 const PAGE_SIZE = 50;
 
@@ -196,4 +199,224 @@ export async function fetchExpiringCredits(
     .lte("expira_em", limit.toISOString())
     .order("expira_em", { ascending: true });
   return data ?? [];
+}
+
+// ─── Criação de membro (admin, bypass RLS) ───────────────────────────────────
+
+async function awardReferralPoints(
+  referrerId: string,
+  referrerNome: string | null
+): Promise<void> {
+  const expira = new Date();
+  expira.setFullYear(expira.getFullYear() + 1);
+  await db().from("im_club_pontos").insert({
+    cliente_id: referrerId,
+    cliente_nome: referrerNome ?? null,
+    cliente_telefone: referrerId,
+    pontos: 300,
+    origem: "indicacao",
+    utilizado: false,
+    expira_em: expira.toISOString(),
+  });
+}
+
+export async function adminCreateMember(member: {
+  cliente_id: string;
+  cliente_nome: string;
+  cliente_telefone?: string;
+  tipo: MemberType;
+  status: MemberStatus;
+  indicada_por_id?: string | null;
+  indicada_por_nome?: string | null;
+  email?: string | null;
+}): Promise<{ success: boolean; error?: string }> {
+  const { error } = await db().from("im_club_membros").insert({
+    ...member,
+    cliente_telefone: member.cliente_telefone ?? member.cliente_id,
+  });
+  if (error) return { success: false, error: error.message };
+
+  if (member.status === "ativo" && member.indicada_por_id) {
+    await awardReferralPoints(member.indicada_por_id, member.indicada_por_nome ?? null);
+  }
+
+  return { success: true };
+}
+
+// ─── AVEC Clientes ────────────────────────────────────────────────────────────
+
+const AVEC_PAGE_SIZE = 30;
+
+function getBirthdayMonth(aniversario: string | null | undefined): number | null {
+  if (!aniversario?.trim()) return null;
+  const parts = aniversario.trim().split("/");
+  if (parts.length >= 2) {
+    const m = parseInt(parts[1], 10);
+    if (!isNaN(m) && m >= 1 && m <= 12) return m;
+  }
+  return null;
+}
+
+export async function fetchAvecStats(): Promise<{
+  total: number;
+  noClube: number;
+  aniversariantesMes: number;
+}> {
+  const admin = db();
+  const currentMonth = new Date().getMonth() + 1;
+
+  const [{ count: total }, { data: memberRows }, { data: avecRows }] = await Promise.all([
+    admin.from("avec_clientes").select("*", { count: "exact", head: true }),
+    admin.from("im_club_membros").select("cliente_id"),
+    admin.from("avec_clientes").select("celular, aniversario"),
+  ]);
+
+  const memberIds = new Set((memberRows ?? []).map((m) => m.cliente_id));
+  const rows = avecRows ?? [];
+
+  return {
+    total: total ?? 0,
+    noClube: rows.filter((a) => a.celular && memberIds.has(a.celular)).length,
+    aniversariantesMes: rows.filter((a) => getBirthdayMonth(a.aniversario) === currentMonth).length,
+  };
+}
+
+export async function fetchAvecClientes(
+  page: number,
+  search: string,
+  filter: AvecFilter
+): Promise<{ data: AvecClienteWithStatus[]; count: number }> {
+  const admin = db();
+  const currentMonth = new Date().getMonth() + 1;
+
+  const { data: memberRows } = await admin
+    .from("im_club_membros")
+    .select("cliente_id, status, tipo");
+
+  const memberMap = new Map(
+    (memberRows ?? []).map((m) => [
+      m.cliente_id,
+      { status: m.status as MemberStatus, tipo: m.tipo as MemberType },
+    ])
+  );
+  const memberIds = Array.from(memberMap.keys());
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const enrich = (rows: any[]): AvecClienteWithStatus[] =>
+    rows.map((a) => ({
+      ...a,
+      im_status: memberMap.get(a.celular ?? "")?.status ?? null,
+      im_tipo: memberMap.get(a.celular ?? "")?.tipo ?? null,
+    }));
+
+  if (filter === "aniversariantes") {
+    let q = admin.from("avec_clientes").select("*").order("nome");
+    if (search) q = q.or(`nome.ilike.%${search}%,celular.ilike.%${search}%`);
+    const { data: all } = await q;
+    const filtered = (all ?? []).filter(
+      (a) => getBirthdayMonth(a.aniversario) === currentMonth
+    );
+    const paged = filtered.slice((page - 1) * AVEC_PAGE_SIZE, page * AVEC_PAGE_SIZE);
+    return { data: enrich(paged), count: filtered.length };
+  }
+
+  let q = admin
+    .from("avec_clientes")
+    .select("*", { count: "exact" })
+    .order("nome")
+    .range((page - 1) * AVEC_PAGE_SIZE, page * AVEC_PAGE_SIZE - 1);
+
+  if (search) q = q.or(`nome.ilike.%${search}%,celular.ilike.%${search}%`);
+
+  if (filter === "no_clube") {
+    if (memberIds.length === 0) return { data: [], count: 0 };
+    q = q.in("celular", memberIds);
+  } else if (filter === "fora_clube" && memberIds.length > 0) {
+    q = q.or(`celular.is.null,celular.not.in.(${memberIds.join(",")})`);
+  }
+
+  const { data, count } = await q;
+  return { data: enrich((data ?? []) as Record<string, unknown>[]), count: count ?? 0 };
+}
+
+export async function enrollAvecClienteInClub(
+  avec: { celular: string; nome: string; email?: string | null },
+  options: {
+    tipo: MemberType;
+    status: MemberStatus;
+    indicadaPorId?: string | null;
+    indicadaPorNome?: string | null;
+    pontosBoasVindas?: number;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  const admin = db();
+  const celular = avec.celular.replace(/\D/g, "");
+
+  const { error } = await admin.from("im_club_membros").insert({
+    cliente_id: celular,
+    cliente_nome: avec.nome,
+    cliente_telefone: celular,
+    tipo: options.tipo,
+    status: options.status,
+    indicada_por_id: options.indicadaPorId ?? null,
+    indicada_por_nome: options.indicadaPorNome ?? null,
+    email: avec.email ?? null,
+  });
+
+  if (error) return { success: false, error: error.message };
+
+  if (options.pontosBoasVindas && options.pontosBoasVindas > 0) {
+    const expira = new Date();
+    expira.setFullYear(expira.getFullYear() + 1);
+    await admin.from("im_club_pontos").insert({
+      cliente_id: celular,
+      cliente_nome: avec.nome,
+      cliente_telefone: celular,
+      pontos: options.pontosBoasVindas,
+      origem: "boas_vindas",
+      utilizado: false,
+      expira_em: expira.toISOString(),
+    });
+  }
+
+  if (options.status === "ativo" && options.indicadaPorId) {
+    await awardReferralPoints(options.indicadaPorId, options.indicadaPorNome ?? null);
+  }
+
+  return { success: true };
+}
+
+export async function adminUpdateMemberStatus(
+  clienteId: string,
+  status: MemberStatus
+): Promise<{ success: boolean; error?: string }> {
+  // When activating, check if there's a referrer who hasn't been rewarded yet
+  if (status === "ativo") {
+    const { data: current } = await db()
+      .from("im_club_membros")
+      .select("status, indicada_por_id, indicada_por_nome")
+      .eq("cliente_id", clienteId)
+      .single();
+
+    if (current && current.status !== "ativo" && current.indicada_por_id) {
+      await awardReferralPoints(current.indicada_por_id, current.indicada_por_nome ?? null);
+    }
+  }
+
+  const { error } = await db()
+    .from("im_club_membros")
+    .update({ status })
+    .eq("cliente_id", clienteId);
+  return error ? { success: false, error: error.message } : { success: true };
+}
+
+export async function adminUpdateMemberTipo(
+  clienteId: string,
+  tipo: MemberType
+): Promise<{ success: boolean; error?: string }> {
+  const { error } = await db()
+    .from("im_club_membros")
+    .update({ tipo })
+    .eq("cliente_id", clienteId);
+  return error ? { success: false, error: error.message } : { success: true };
 }

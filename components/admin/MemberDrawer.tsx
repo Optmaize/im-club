@@ -22,12 +22,12 @@ import {
 import { StatusBadge } from "./StatusBadge";
 import { createClient } from "@/lib/supabase/client";
 import { updateMemberStatus, addMemberPoints, addMemberCredit } from "@/lib/queries";
-import { createAuthUser, sendPasswordResetEmail } from "@/app/actions/auth";
 import { Member, MemberWithBalance, MemberStatus, PointRecord, CreditRecord, Attendance } from "@/lib/types";
 import { toast } from "sonner";
-import { Loader2, Phone, Calendar, Star, DollarSign, Send, Mail } from "lucide-react";
+import { Loader2, Phone, Calendar, Star, DollarSign, Mail } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MemberAccessPanel } from "./MemberAccessPanel";
 
 interface MemberDrawerProps {
   member: MemberWithBalance | null;
@@ -83,7 +83,6 @@ export function MemberDrawer({ member, points, credits, attendances, referrals, 
   const [addPts, setAddPts] = useState("");
   const [addCreditVal, setAddCreditVal] = useState("");
   const [saving, setSaving] = useState(false);
-  const [sendingAccess, setSendingAccess] = useState(false);
 
   if (!member) return null;
 
@@ -122,19 +121,6 @@ export function MemberDrawer({ member, points, credits, attendances, referrals, 
     setSaving(false);
     if (error) toast.error("Erro ao adicionar crédito");
     else { toast.success(`${fmt(parseFloat(addCreditVal))} adicionados`); setAddCreditVal(""); onUpdated(); }
-  }
-
-  async function handleSendAccess() {
-    if (!member?.email) return;
-    setSendingAccess(true);
-    if (!member.auth_user_id) {
-      const r = await createAuthUser(member.email, member.cliente_id);
-      if (r.error) { toast.error(`Erro: ${r.error}`); setSendingAccess(false); return; }
-    }
-    const r = await sendPasswordResetEmail(member.email);
-    setSendingAccess(false);
-    if (r.error) toast.error("Erro ao enviar email");
-    else toast.success(`Link enviado para ${member.email}`);
   }
 
   return (
@@ -214,14 +200,13 @@ export function MemberDrawer({ member, points, credits, attendances, referrals, 
             {statusLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground flex-shrink-0" />}
           </div>
 
-          {member.email ? (
-            <Button variant="outline" size="sm" onClick={handleSendAccess} disabled={sendingAccess} className="w-full gap-2 h-8 text-xs">
-              {sendingAccess ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              {member.auth_user_id ? "Reenviar link de acesso" : "Enviar link de primeiro acesso"}
-            </Button>
-          ) : (
-            <p className="text-xs text-muted-foreground text-center">Sem email — não pode fazer login</p>
-          )}
+          <MemberAccessPanel
+            clienteId={member.cliente_id}
+            clienteNome={member.cliente_nome}
+            email={member.email ?? null}
+            authUserId={member.auth_user_id ?? null}
+            onUpdated={onUpdated}
+          />
         </div>
 
         {/* Tabs com scroll */}

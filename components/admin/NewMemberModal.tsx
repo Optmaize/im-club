@@ -17,12 +17,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createClient } from "@/lib/supabase/client";
-import { createMember, searchMembers } from "@/lib/queries";
+import { IndicadoraSelect } from "@/components/admin/IndicadoraSelect";
+import { adminCreateMember } from "@/app/actions/admin-queries";
 import { createAuthUser, sendPasswordResetEmail } from "@/app/actions/auth";
 import { Member, MemberStatus, MemberType } from "@/lib/types";
 import { toast } from "sonner";
-import { Loader2, Search } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 interface NewMemberModalProps {
   open: boolean;
@@ -41,30 +41,15 @@ export function NewMemberModal({ open, onClose, onCreated }: NewMemberModalProps
   const [tipo, setTipo] = useState<MemberType>("indicada");
   const [status, setStatus] = useState<MemberStatus>("pendente");
   const [indicadora, setIndicadora] = useState<Member | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Member[]>([]);
-  const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
 
   function reset() {
-    setNome(""); setCelular(""); setEmail(""); setTipo("indicada");
-    setStatus("pendente"); setIndicadora(null); setSearchQuery(""); setSearchResults([]);
-  }
-
-  async function handleSearch(q: string) {
-    setSearchQuery(q);
-    if (q.length < 2) { setSearchResults([]); return; }
-    setSearching(true);
-    const supabase = createClient();
-    const results = await searchMembers(supabase, q);
-    setSearchResults(results);
-    setSearching(false);
-  }
-
-  function selectIndicadora(m: Member) {
-    setIndicadora(m);
-    setSearchQuery(m.cliente_nome);
-    setSearchResults([]);
+    setNome("");
+    setCelular("");
+    setEmail("");
+    setTipo("indicada");
+    setStatus("pendente");
+    setIndicadora(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -73,13 +58,10 @@ export function NewMemberModal({ open, onClose, onCreated }: NewMemberModalProps
     setSaving(true);
 
     const cleanedPhone = cleanPhone(celular);
-    const supabase = createClient();
 
-    // 1. Cria o membro na tabela
-    const { error: memberError } = await createMember(supabase, {
+    const result = await adminCreateMember({
       cliente_id: cleanedPhone,
       cliente_nome: nome,
-      cliente_telefone: cleanedPhone,
       tipo,
       status,
       indicada_por_id: indicadora?.cliente_id ?? null,
@@ -87,27 +69,31 @@ export function NewMemberModal({ open, onClose, onCreated }: NewMemberModalProps
       email: email || null,
     });
 
-    if (memberError) {
+    if (!result.success) {
       setSaving(false);
       toast.error("Erro ao cadastrar. Celular pode já estar cadastrado.");
       return;
     }
 
-    // 2. Se tiver email, cria usuário no Auth e envia link de primeiro acesso
+    // If email provided, create auth user and send access link
     if (email) {
       const authResult = await createAuthUser(email, cleanedPhone);
       if (authResult.error) {
-        toast.warning(`Membro cadastrado, mas erro ao criar acesso: ${authResult.error}`);
+        toast.warning(`Membro cadastrada, mas erro ao criar acesso: ${authResult.error}`);
       } else {
         const resetResult = await sendPasswordResetEmail(email);
         if (!resetResult.error) {
-          toast.success(`${nome} cadastrada! Link de primeiro acesso enviado para ${email}`);
+          toast.success(`${nome} cadastrada! Link de acesso enviado para ${email}`);
         } else {
           toast.success(`${nome} cadastrada! Envie o link de acesso manualmente.`);
         }
       }
     } else {
-      toast.success(`${nome} cadastrada com sucesso!`);
+      const msg =
+        status === "ativo" && indicadora
+          ? `${nome} cadastrada! ${indicadora.cliente_nome} recebeu 300 pontos de indicação.`
+          : `${nome} cadastrada com sucesso!`;
+      toast.success(msg);
     }
 
     setSaving(false);
@@ -117,7 +103,7 @@ export function NewMemberModal({ open, onClose, onCreated }: NewMemberModalProps
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { reset(); onClose(); } }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-playfair text-ink">Novo Membro</DialogTitle>
@@ -126,12 +112,22 @@ export function NewMemberModal({ open, onClose, onCreated }: NewMemberModalProps
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
             <Label>Nome completo *</Label>
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da cliente" required />
+            <Input
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              placeholder="Nome da cliente"
+              required
+            />
           </div>
 
           <div className="space-y-1.5">
             <Label>Celular *</Label>
-            <Input value={celular} onChange={(e) => setCelular(e.target.value)} placeholder="84999261688" required />
+            <Input
+              value={celular}
+              onChange={(e) => setCelular(e.target.value)}
+              placeholder="84999261688"
+              required
+            />
             <p className="text-xs text-muted-foreground">Apenas dígitos com DDD</p>
           </div>
 
@@ -144,7 +140,7 @@ export function NewMemberModal({ open, onClose, onCreated }: NewMemberModalProps
               placeholder="cliente@email.com"
             />
             <p className="text-xs text-muted-foreground">
-              Se informado, um link para criar a senha será enviado automaticamente
+              Se informado, um link de acesso será enviado automaticamente
             </p>
           </div>
 
@@ -172,39 +168,28 @@ export function NewMemberModal({ open, onClose, onCreated }: NewMemberModalProps
             </div>
           </div>
 
-          <div className="space-y-1.5 relative">
-            <Label>Indicada por (opcional)</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Buscar por nome ou celular"
-                className="pl-9"
-              />
-              {searching && <Loader2 className="absolute right-3 top-2.5 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
-            </div>
-            {searchResults.length > 0 && (
-              <div className="absolute z-50 top-full mt-1 w-full bg-white border border-beige-dark rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                {searchResults.map((m) => (
-                  <button key={m.cliente_id} type="button"
-                    className="w-full text-left px-3 py-2 hover:bg-beige text-sm transition-colors"
-                    onClick={() => selectIndicadora(m)}
-                  >
-                    <span className="font-medium text-ink">{m.cliente_nome}</span>
-                    <span className="text-muted-foreground ml-2 text-xs">{m.cliente_id}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {indicadora && (
-              <p className="text-xs text-emerald-600">✓ {indicadora.cliente_nome} selecionada</p>
-            )}
-          </div>
+          <IndicadoraSelect value={indicadora} onChange={setIndicadora} />
+
+          {status === "ativo" && indicadora && (
+            <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+              ✓ <strong>{indicadora.cliente_nome}</strong> receberá automaticamente <strong>300 pontos</strong> de indicação ao cadastrar.
+            </p>
+          )}
 
           <div className="flex gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
-            <Button type="submit" disabled={saving} className="flex-1 bg-ink text-gold hover:bg-ink-light">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { reset(); onClose(); }}
+              className="flex-1"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              disabled={saving}
+              className="flex-1 bg-ink text-gold hover:bg-ink-light"
+            >
               {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
               Cadastrar
             </Button>
