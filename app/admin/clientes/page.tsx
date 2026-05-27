@@ -259,8 +259,8 @@ export default function ClientesPage() {
   const totalPages = Math.ceil(total / IM_PAGE_SIZE);
 
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between">
+    <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-playfair text-2xl font-bold text-ink">Clientes</h1>
           <p className="text-muted-foreground text-sm mt-0.5">

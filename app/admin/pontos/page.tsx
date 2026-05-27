@@ -89,7 +89,7 @@ export default function PontosPage() {
   const totalCPages = Math.ceil(totalCredits / PAGE_SIZE);
 
   return (
-    <div className="p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
       <div>
         <h1 className="font-playfair text-2xl font-bold text-ink">Pontos & Créditos</h1>
         <p className="text-muted-foreground text-sm">Histórico completo de pontos e créditos</p>
@@ -114,6 +114,7 @@ export default function PontosPage() {
           </div>
           <Card className="border-0 shadow-sm">
             <CardContent className="p-0">
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -148,6 +149,7 @@ export default function PontosPage() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
           {totalPPages > 1 && (
@@ -174,6 +176,7 @@ export default function PontosPage() {
           </div>
           <Card className="border-0 shadow-sm">
             <CardContent className="p-0">
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -217,6 +220,7 @@ export default function PontosPage() {
                   })}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
           {totalCPages > 1 && (

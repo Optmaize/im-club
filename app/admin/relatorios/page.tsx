@@ -21,7 +21,7 @@ export default async function RelatoriosPage() {
   ]);
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="font-playfair text-2xl font-bold text-ink">Relatórios</h1>
         <p className="text-muted-foreground text-sm">Insights sobre o programa de fidelidade</p>
@@ -29,9 +29,9 @@ export default async function RelatoriosPage() {
 
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-muted-foreground" />
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <CreditCard className="w-4 h-4 text-muted-foreground shrink-0" />
               <CardTitle className="font-playfair text-base text-ink">
                 Membros que Nunca Usaram Crédito
               </CardTitle>
@@ -77,9 +77,9 @@ export default async function RelatoriosPage() {
 
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
               <CardTitle className="font-playfair text-base text-ink">
                 Pontos Expirando em 30 Dias
               </CardTitle>

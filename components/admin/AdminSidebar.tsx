@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -11,8 +12,10 @@ import {
   Coins,
   BarChart3,
   LogOut,
+  Menu,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -24,6 +27,7 @@ const navItems = [
 export function AdminSidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -32,49 +36,99 @@ export function AdminSidebar() {
     router.push("/login");
   }
 
-  return (
-    <aside className="hidden md:flex flex-col w-60 min-h-screen bg-ink text-white border-r border-white/5">
-      <div className="flex items-center gap-3 p-6 border-b border-white/10">
-        <IMClubLogo size={36} />
-        <div>
-          <p className="font-playfair text-gold font-bold text-sm leading-tight">
-            IM Club
-          </p>
-          <p className="text-white/40 text-xs">Admin</p>
-        </div>
-      </div>
-
-      <nav className="flex-1 p-4 space-y-1">
-        {navItems.map(({ href, label, icon: Icon }) => {
-          const active =
-            href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                active
-                  ? "bg-gold/10 text-gold"
-                  : "text-white/60 hover:text-white hover:bg-white/5"
-              )}
-            >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="p-4 border-t border-white/10">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition-colors"
+  function renderNavLinks(onItemClick?: () => void) {
+    return navItems.map(({ href, label, icon: Icon }) => {
+      const active =
+        href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
+      return (
+        <Link
+          key={href}
+          href={href}
+          onClick={onItemClick}
+          className={cn(
+            "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+            active
+              ? "bg-gold/10 text-gold"
+              : "text-white/60 hover:text-white hover:bg-white/5"
+          )}
         >
-          <LogOut className="w-4 h-4" />
-          Sair
-        </button>
+          <Icon className="w-4 h-4 flex-shrink-0" />
+          {label}
+        </Link>
+      );
+    });
+  }
+
+  return (
+    <>
+      {/* ── Desktop sidebar ── */}
+      <aside className="hidden md:flex flex-col w-60 min-h-screen bg-ink text-white border-r border-white/5">
+        <div className="flex items-center gap-3 p-6 border-b border-white/10">
+          <IMClubLogo size={36} />
+          <div>
+            <p className="font-playfair text-gold font-bold text-sm leading-tight">
+              IM Club
+            </p>
+            <p className="text-white/40 text-xs">Admin</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 p-4 space-y-1">{renderNavLinks()}</nav>
+
+        <div className="p-4 border-t border-white/10">
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Sair
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Mobile top bar ── */}
+      <div className="flex md:hidden fixed top-0 inset-x-0 z-20 h-14 bg-ink border-b border-white/10 items-center justify-between px-4">
+        <div className="flex items-center gap-3">
+          <IMClubLogo size={28} />
+          <p className="font-playfair text-gold font-bold text-sm">IM Club</p>
+        </div>
+
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetTrigger className="p-2 -mr-1 rounded-lg text-white/60 hover:text-white transition-colors">
+            <Menu className="w-5 h-5" />
+            <span className="sr-only">Abrir menu</span>
+          </SheetTrigger>
+          <SheetContent
+            side="left"
+            showCloseButton
+            className="bg-ink text-white border-white/10 p-0 flex flex-col gap-0"
+          >
+            <div className="flex items-center gap-3 p-6 border-b border-white/10">
+              <IMClubLogo size={32} />
+              <div>
+                <p className="font-playfair text-gold font-bold text-sm leading-tight">
+                  IM Club
+                </p>
+                <p className="text-white/40 text-xs">Admin</p>
+              </div>
+            </div>
+
+            <nav className="flex-1 p-4 space-y-1">
+              {renderNavLinks(() => setMobileOpen(false))}
+            </nav>
+
+            <div className="p-4 border-t border-white/10">
+              <button
+                onClick={() => { setMobileOpen(false); handleLogout(); }}
+                className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm text-white/50 hover:text-white hover:bg-white/5 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                Sair
+              </button>
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
-    </aside>
+    </>
   );
 }
