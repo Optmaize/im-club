@@ -55,7 +55,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
-      toast.error("Email ou senha incorretos.");
+      toast.error(error.message);
       return;
     }
     // Middleware will redirect to /admin or /minha-conta
