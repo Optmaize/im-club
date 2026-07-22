@@ -21,10 +21,10 @@ import {
 } from "@/components/ui/select";
 import { StatusBadge } from "./StatusBadge";
 import { createClient } from "@/lib/supabase/client";
-import { updateMemberStatus, addMemberPoints, addMemberCredit } from "@/lib/queries";
-import { Member, MemberWithBalance, MemberStatus, PointRecord, CreditRecord, Attendance } from "@/lib/types";
+import { updateMemberStatus, addMemberPoints, addMemberCredit, registerCreditUsage } from "@/lib/queries";
+import { Member, MemberWithBalance, MemberStatus, PointRecord, CreditRecord, CreditUsageRecord, Attendance } from "@/lib/types";
 import { toast } from "sonner";
-import { Loader2, Phone, Calendar, Star, DollarSign, Mail } from "lucide-react";
+import { Loader2, Phone, Calendar, Star, DollarSign, Mail, MinusCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MemberAccessPanel } from "./MemberAccessPanel";
@@ -33,6 +33,7 @@ interface MemberDrawerProps {
   member: MemberWithBalance | null;
   points: PointRecord[];
   credits: CreditRecord[];
+  creditUsages: CreditUsageRecord[];
   attendances: Attendance[];
   referrals: Member[];
   open: boolean;
@@ -78,11 +79,14 @@ function TypeBadge({ tipo }: { tipo: string | null | undefined }) {
   return <Badge variant="outline" className={`text-xs ${cfg.className}`}>{cfg.label}</Badge>;
 }
 
-export function MemberDrawer({ member, points, credits, attendances, referrals, open, onClose, onUpdated }: MemberDrawerProps) {
+export function MemberDrawer({ member, points, credits, creditUsages, attendances, referrals, open, onClose, onUpdated }: MemberDrawerProps) {
   const [statusLoading, setStatusLoading] = useState(false);
   const [addPts, setAddPts] = useState("");
   const [addCreditVal, setAddCreditVal] = useState("");
   const [saving, setSaving] = useState(false);
+  const [useVal, setUseVal] = useState("");
+  const [useObs, setUseObs] = useState("");
+  const [usingCredit, setUsingCredit] = useState(false);
 
   if (!member) return null;
 
@@ -121,6 +125,25 @@ export function MemberDrawer({ member, points, credits, attendances, referrals, 
     setSaving(false);
     if (error) toast.error("Erro ao adicionar crédito");
     else { toast.success(`${fmt(parseFloat(addCreditVal))} adicionados`); setAddCreditVal(""); onUpdated(); }
+  }
+
+  async function handleUseCredit() {
+    if (!member || !useVal) return;
+    const valor = parseFloat(useVal);
+    if (valor > member.credito_disponivel) {
+      toast.error("Valor maior que o crédito disponível");
+      return;
+    }
+    setUsingCredit(true);
+    const { error } = await registerCreditUsage(createClient(), {
+      cliente_id: member.cliente_id,
+      cliente_nome: member.cliente_nome,
+      valor,
+      observacao: useObs || undefined,
+    });
+    setUsingCredit(false);
+    if (error) toast.error("Erro ao registrar uso de crédito");
+    else { toast.success(`${fmt(valor)} de crédito registrados como usados`); setUseVal(""); setUseObs(""); onUpdated(); }
   }
 
   return (
@@ -248,7 +271,7 @@ export function MemberDrawer({ member, points, credits, attendances, referrals, 
             </TabsContent>
 
             {/* Créditos */}
-            <TabsContent value="creditos" className="flex-1 overflow-y-auto m-0 p-4 space-y-3">
+            <TabsContent value="creditos" className="flex-1 overflow-y-auto m-0 p-4 space-y-4">
               <div className="bg-beige rounded-lg p-3 space-y-2">
                 <p className="text-xs font-medium text-muted-foreground">Adicionar crédito manualmente</p>
                 <div className="flex gap-2">
@@ -258,21 +281,53 @@ export function MemberDrawer({ member, points, credits, attendances, referrals, 
                   </Button>
                 </div>
               </div>
-              {credits.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">Nenhum registro</p>
-              ) : credits.map((c) => {
-                const st = recordStatus(c);
-                return (
-                  <div key={c.id} className="flex justify-between items-start py-2.5 border-b border-beige last:border-0">
-                    <div>
-                      <p className="text-sm font-semibold text-ink">{fmt(c.valor)}</p>
-                      <p className="text-xs text-muted-foreground">{c.origem ?? "—"}</p>
-                      <p className="text-xs text-muted-foreground">{fmtDateLong(c.criado_em)}</p>
+
+              <div className="bg-beige rounded-lg p-3 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Registrar uso de crédito <span className="text-muted-foreground/70">· disponível: {fmt(member.credito_disponivel)}</span>
+                </p>
+                <div className="flex gap-2">
+                  <Input type="number" step="0.01" placeholder="R$ 0,00" value={useVal} onChange={(e) => setUseVal(e.target.value)} className="h-8 text-sm" />
+                  <Button size="sm" onClick={handleUseCredit} disabled={usingCredit || !useVal} className="bg-ink text-gold hover:bg-ink-light h-8 px-3 flex-shrink-0">
+                    {usingCredit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MinusCircle className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+                <Input placeholder="Observação (opcional)" value={useObs} onChange={(e) => setUseObs(e.target.value)} className="h-8 text-sm" />
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Concedidos</p>
+                {credits.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">Nenhum registro</p>
+                ) : credits.map((c) => {
+                  const st = recordStatus(c);
+                  return (
+                    <div key={c.id} className="flex justify-between items-start py-2.5 border-b border-beige last:border-0">
+                      <div>
+                        <p className="text-sm font-semibold text-ink">{fmt(c.valor)}</p>
+                        <p className="text-xs text-muted-foreground">{c.origem ?? "—"}</p>
+                        <p className="text-xs text-muted-foreground">{fmtDateLong(c.criado_em)}</p>
+                      </div>
+                      <Badge variant="outline" className={`text-xs flex-shrink-0 ${st.cls}`}>{st.label}</Badge>
                     </div>
-                    <Badge variant="outline" className={`text-xs flex-shrink-0 ${st.cls}`}>{st.label}</Badge>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Histórico de uso</p>
+                {creditUsages.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">Nenhum resgate registrado ainda</p>
+                ) : creditUsages.map((u) => (
+                  <div key={u.id} className="flex justify-between items-start py-2.5 border-b border-beige last:border-0">
+                    <div>
+                      <p className="text-sm font-semibold text-ink">- {fmt(u.valor)}</p>
+                      <p className="text-xs text-muted-foreground">{u.observacao ?? "Resgatado por " + u.criado_por}</p>
+                      <p className="text-xs text-muted-foreground">{fmtDateLong(u.criado_em)}</p>
+                    </div>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </TabsContent>
 
             {/* Atendimentos */}

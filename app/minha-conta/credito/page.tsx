@@ -4,10 +4,12 @@ import { getMemberForUser } from "@/lib/queries";
 import {
   fetchMemberCreditBalance,
   fetchMemberCredits,
+  fetchMemberCreditUsages,
   fetchExpiringCredits,
 } from "@/app/actions/admin-queries";
 import { SaldoCard } from "@/components/cliente/SaldoCard";
 import { CreditHistory } from "@/components/cliente/CreditHistory";
+import { CreditUsageHistory } from "@/components/cliente/CreditUsageHistory";
 import { DollarSign } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -23,9 +25,10 @@ export default async function CreditoPage() {
   const member = await getMemberForUser(admin, user.id, user.email);
   if (!member) return null;
 
-  const [saldo, credits, expiring] = await Promise.all([
+  const [saldo, credits, usages, expiring] = await Promise.all([
     fetchMemberCreditBalance(member.cliente_id),
     fetchMemberCredits(member.cliente_id),
+    fetchMemberCreditUsages(member.cliente_id),
     fetchExpiringCredits(member.cliente_id, 30),
   ]);
 
@@ -71,6 +74,16 @@ export default async function CreditoPage() {
           {credits.length} registro{credits.length !== 1 ? "s" : ""} de crédito
         </p>
         <CreditHistory credits={credits} />
+      </div>
+
+      <div className="bg-white rounded-xl p-5 shadow-sm">
+        <h2 className="font-playfair text-base font-semibold text-ink mb-1">
+          Créditos Utilizados
+        </h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          {usages.length} resgate{usages.length !== 1 ? "s" : ""} de crédito
+        </p>
+        <CreditUsageHistory usages={usages} />
       </div>
     </div>
   );

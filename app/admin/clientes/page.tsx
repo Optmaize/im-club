@@ -7,6 +7,7 @@ import {
   fetchMemberWithBalance,
   fetchMemberPoints,
   fetchMemberCredits,
+  fetchMemberCreditUsages,
   fetchMemberAttendances,
   fetchMemberReferrals,
   fetchMemberBalancesBatch,
@@ -18,6 +19,7 @@ import {
   MemberWithBalance,
   PointRecord,
   CreditRecord,
+  CreditUsageRecord,
   Attendance,
   MemberStatus,
   AvecClienteWithStatus,
@@ -181,6 +183,7 @@ export default function ClientesPage() {
   const [selectedMember, setSelectedMember] = useState<MemberWithBalance | null>(null);
   const [drawerPoints, setDrawerPoints] = useState<PointRecord[]>([]);
   const [drawerCredits, setDrawerCredits] = useState<CreditRecord[]>([]);
+  const [drawerCreditUsages, setDrawerCreditUsages] = useState<CreditUsageRecord[]>([]);
   const [drawerAttendances, setDrawerAttendances] = useState<Attendance[]>([]);
   const [drawerReferrals, setDrawerReferrals] = useState<Member[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -240,16 +243,18 @@ export default function ClientesPage() {
   async function openMemberDrawer(member: Member) {
     setDrawerOpen(true);
     setDrawerLoading(true);
-    const [profile, points, credits, attendances, referrals] = await Promise.all([
+    const [profile, points, credits, creditUsages, attendances, referrals] = await Promise.all([
       fetchMemberWithBalance(member.cliente_id),
       fetchMemberPoints(member.cliente_id),
       fetchMemberCredits(member.cliente_id),
+      fetchMemberCreditUsages(member.cliente_id),
       fetchMemberAttendances(member.cliente_id),
       fetchMemberReferrals(member.cliente_id),
     ]);
     setSelectedMember(profile);
     setDrawerPoints(points);
     setDrawerCredits(credits);
+    setDrawerCreditUsages(creditUsages);
     setDrawerAttendances(attendances);
     setDrawerReferrals(referrals);
     setDrawerLoading(false);
@@ -587,6 +592,7 @@ export default function ClientesPage() {
           member={selectedMember}
           points={drawerPoints}
           credits={drawerCredits}
+          creditUsages={drawerCreditUsages}
           attendances={drawerAttendances}
           referrals={drawerReferrals}
           open={drawerOpen && !drawerLoading}

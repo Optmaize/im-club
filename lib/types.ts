@@ -48,6 +48,18 @@ export interface CreditRecord {
   criado_em: string;
 }
 
+// Matches actual im_club_creditos_usos schema
+export interface CreditUsageRecord {
+  id: string;
+  cliente_id: string;
+  cliente_nome: string | null;
+  cliente_telefone: string | null;
+  valor: number;
+  observacao: string | null;
+  criado_por: string;
+  criado_em: string;
+}
+
 // Matches actual im_club_comandas_processadas schema
 export interface Attendance {
   id: string;

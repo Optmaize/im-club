@@ -3,6 +3,7 @@ import {
   AdminMetrics,
   Attendance,
   CreditRecord,
+  CreditUsageRecord,
   Member,
   MemberWithBalance,
   MonthlyData,
@@ -27,20 +28,16 @@ export async function getMemberPointsBalance(
   return data.reduce((sum, r) => sum + (r.pontos ?? 0), 0);
 }
 
+// Já líquido de resgates registrados em im_club_creditos_usos — ver a função
+// get_member_credit_balance no Postgres para a lógica completa.
 export async function getMemberCreditBalance(
   supabase: SupabaseClient,
   cliente_id: string
 ): Promise<number> {
-  const now = new Date().toISOString();
-  const { data } = await supabase
-    .from("im_club_creditos")
-    .select("valor")
-    .eq("cliente_id", cliente_id)
-    .eq("utilizado", false)
-    .or(`expira_em.is.null,expira_em.gt.${now}`);
-
-  if (!data) return 0;
-  return data.reduce((sum, r) => sum + (r.valor ?? 0), 0);
+  const { data } = await supabase.rpc("get_member_credit_balance", {
+    p_cliente_id: cliente_id,
+  });
+  return Number(data ?? 0);
 }
 
 // ─── Perfil do membro ────────────────────────────────────────────────────────
@@ -154,6 +151,18 @@ export async function getMemberCredits(
 ): Promise<CreditRecord[]> {
   const { data } = await supabase
     .from("im_club_creditos")
+    .select("*")
+    .eq("cliente_id", cliente_id)
+    .order("criado_em", { ascending: false });
+  return data ?? [];
+}
+
+export async function getMemberCreditUsages(
+  supabase: SupabaseClient,
+  cliente_id: string
+): Promise<CreditUsageRecord[]> {
+  const { data } = await supabase
+    .from("im_club_creditos_usos")
     .select("*")
     .eq("cliente_id", cliente_id)
     .order("criado_em", { ascending: false });
@@ -347,15 +356,43 @@ export async function expireCredit(
     .eq("id", creditId);
 }
 
+// Registra um resgate de crédito (desconto aplicado no balcão pela Isa).
+// Não toca em im_club_creditos — o saldo cai porque get_member_credit_balance
+// soma os grants e subtrai a soma de im_club_creditos_usos.
+export async function registerCreditUsage(
+  supabase: SupabaseClient,
+  {
+    cliente_id,
+    cliente_nome,
+    valor,
+    observacao,
+    criado_por,
+  }: {
+    cliente_id: string;
+    cliente_nome?: string;
+    valor: number;
+    observacao?: string;
+    criado_por?: string;
+  }
+) {
+  return supabase.from("im_club_creditos_usos").insert({
+    cliente_id,
+    cliente_nome: cliente_nome ?? null,
+    cliente_telefone: cliente_id,
+    valor,
+    observacao: observacao ?? null,
+    criado_por: criado_por ?? "Isa",
+  });
+}
+
 // ─── Relatórios ───────────────────────────────────────────────────────────────
 
 export async function getMembersNeverUsedCredit(
   supabase: SupabaseClient
 ): Promise<Member[]> {
   const { data: usedIds } = await supabase
-    .from("im_club_creditos")
-    .select("cliente_id")
-    .eq("utilizado", true);
+    .from("im_club_creditos_usos")
+    .select("cliente_id");
 
   const usedSet = new Set((usedIds ?? []).map((r) => r.cliente_id));
 
@@ -409,7 +446,7 @@ export async function getMemberBalancesBatch(
   if (clienteIds.length === 0) return {};
   const now = new Date().toISOString();
 
-  const [{ data: pts }, { data: creds }] = await Promise.all([
+  const [{ data: pts }, { data: creds }, { data: usos }] = await Promise.all([
     supabase
       .from("im_club_pontos")
       .select("cliente_id, pontos")
@@ -422,12 +459,18 @@ export async function getMemberBalancesBatch(
       .in("cliente_id", clienteIds)
       .eq("utilizado", false)
       .or(`expira_em.is.null,expira_em.gt.${now}`),
+    supabase
+      .from("im_club_creditos_usos")
+      .select("cliente_id, valor")
+      .in("cliente_id", clienteIds),
   ]);
 
   const result: Record<string, { pontos: number; credito: number }> = {};
   clienteIds.forEach((id) => { result[id] = { pontos: 0, credito: 0 }; });
   (pts ?? []).forEach((r) => { result[r.cliente_id] = { ...result[r.cliente_id], pontos: (result[r.cliente_id]?.pontos ?? 0) + (r.pontos ?? 0) }; });
   (creds ?? []).forEach((r) => { result[r.cliente_id] = { ...result[r.cliente_id], credito: (result[r.cliente_id]?.credito ?? 0) + (r.valor ?? 0) }; });
+  (usos ?? []).forEach((r) => { result[r.cliente_id] = { ...result[r.cliente_id], credito: (result[r.cliente_id]?.credito ?? 0) - (r.valor ?? 0) }; });
+  clienteIds.forEach((id) => { result[id].credito = Math.max(0, result[id].credito); });
   return result;
 }
 

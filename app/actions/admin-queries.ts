@@ -2,7 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  PointRecord, CreditRecord, Member, Attendance, MemberWithBalance,
+  PointRecord, CreditRecord, CreditUsageRecord, Member, Attendance, MemberWithBalance,
   AvecClienteWithStatus, AvecFilter, MemberStatus, MemberType,
 } from "@/lib/types";
 
@@ -55,25 +55,20 @@ export async function fetchMemberWithBalance(
   if (!member) return null;
 
   const now = new Date().toISOString();
-  const [{ data: pts }, { data: creds }] = await Promise.all([
+  const [{ data: pts }, { data: credito }] = await Promise.all([
     db()
       .from("im_club_pontos")
       .select("pontos")
       .eq("cliente_id", clienteId)
       .eq("utilizado", false)
       .or(`expira_em.is.null,expira_em.gt.${now}`),
-    db()
-      .from("im_club_creditos")
-      .select("valor")
-      .eq("cliente_id", clienteId)
-      .eq("utilizado", false)
-      .or(`expira_em.is.null,expira_em.gt.${now}`),
+    db().rpc("get_member_credit_balance", { p_cliente_id: clienteId }),
   ]);
 
   return {
     ...member,
     pontos_disponiveis: (pts ?? []).reduce((s, r) => s + (r.pontos ?? 0), 0),
-    credito_disponivel: (creds ?? []).reduce((s, r) => s + (r.valor ?? 0), 0),
+    credito_disponivel: Number(credito ?? 0),
   };
 }
 
@@ -89,6 +84,15 @@ export async function fetchMemberPoints(clienteId: string): Promise<PointRecord[
 export async function fetchMemberCredits(clienteId: string): Promise<CreditRecord[]> {
   const { data } = await db()
     .from("im_club_creditos")
+    .select("*")
+    .eq("cliente_id", clienteId)
+    .order("criado_em", { ascending: false });
+  return data ?? [];
+}
+
+export async function fetchMemberCreditUsages(clienteId: string): Promise<CreditUsageRecord[]> {
+  const { data } = await db()
+    .from("im_club_creditos_usos")
     .select("*")
     .eq("cliente_id", clienteId)
     .order("criado_em", { ascending: false });
@@ -121,7 +125,7 @@ export async function fetchMemberBalancesBatch(
   if (clienteIds.length === 0) return {};
   const now = new Date().toISOString();
 
-  const [{ data: pts }, { data: creds }] = await Promise.all([
+  const [{ data: pts }, { data: creds }, { data: usos }] = await Promise.all([
     db()
       .from("im_club_pontos")
       .select("cliente_id, pontos")
@@ -134,12 +138,18 @@ export async function fetchMemberBalancesBatch(
       .in("cliente_id", clienteIds)
       .eq("utilizado", false)
       .or(`expira_em.is.null,expira_em.gt.${now}`),
+    db()
+      .from("im_club_creditos_usos")
+      .select("cliente_id, valor")
+      .in("cliente_id", clienteIds),
   ]);
 
   const result: Record<string, { pontos: number; credito: number }> = {};
   clienteIds.forEach((id) => { result[id] = { pontos: 0, credito: 0 }; });
   (pts ?? []).forEach((r) => { result[r.cliente_id].pontos += r.pontos ?? 0; });
   (creds ?? []).forEach((r) => { result[r.cliente_id].credito += r.valor ?? 0; });
+  (usos ?? []).forEach((r) => { result[r.cliente_id].credito -= r.valor ?? 0; });
+  clienteIds.forEach((id) => { result[id].credito = Math.max(0, result[id].credito); });
   return result;
 }
 
@@ -157,14 +167,8 @@ export async function fetchMemberPointsBalance(clienteId: string): Promise<numbe
 }
 
 export async function fetchMemberCreditBalance(clienteId: string): Promise<number> {
-  const now = new Date().toISOString();
-  const { data } = await db()
-    .from("im_club_creditos")
-    .select("valor")
-    .eq("cliente_id", clienteId)
-    .eq("utilizado", false)
-    .or(`expira_em.is.null,expira_em.gt.${now}`);
-  return (data ?? []).reduce((s, r) => s + (r.valor ?? 0), 0);
+  const { data } = await db().rpc("get_member_credit_balance", { p_cliente_id: clienteId });
+  return Number(data ?? 0);
 }
 
 export async function fetchExpiringPoints(
