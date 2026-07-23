@@ -21,19 +21,24 @@ import {
   Cake,
   Star,
   DollarSign,
+  MinusCircle,
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   enrollAvecClienteInClub,
   fetchMemberWithBalance,
+  fetchMemberCreditUsages,
   adminUpdateMemberStatus,
   adminUpdateMemberTipo,
 } from "@/app/actions/admin-queries";
+import { registerCreditUsage } from "@/lib/queries";
+import { createClient } from "@/lib/supabase/client";
 import { IndicadoraSelect } from "@/components/admin/IndicadoraSelect";
 import { MemberAccessPanel } from "@/components/admin/MemberAccessPanel";
 import {
   AvecClienteWithStatus,
+  CreditUsageRecord,
   Member,
   MemberStatus,
   MemberType,
@@ -70,6 +75,10 @@ function getInitials(name: string) {
 export function AvecClienteDrawer({ avec, open, onClose, onUpdated }: Props) {
   const [memberProfile, setMemberProfile] = useState<MemberWithBalance | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [creditUsages, setCreditUsages] = useState<CreditUsageRecord[]>([]);
+  const [useVal, setUseVal] = useState("");
+  const [useObs, setUseObs] = useState("");
+  const [usingCredit, setUsingCredit] = useState(false);
 
   // Status / tipo inline editing
   const [editingStatus, setEditingStatus] = useState(false);
@@ -89,8 +98,12 @@ export function AvecClienteDrawer({ avec, open, onClose, onUpdated }: Props) {
     if (!avec || !open) return;
     if (avec.im_status && avec.celular) {
       setProfileLoading(true);
-      fetchMemberWithBalance(avec.celular).then((m) => {
+      Promise.all([
+        fetchMemberWithBalance(avec.celular),
+        fetchMemberCreditUsages(avec.celular),
+      ]).then(([m, usages]) => {
         setMemberProfile(m);
+        setCreditUsages(usages);
         if (m) {
           setNewStatus(m.status ?? "ativo");
           setNewTipo(m.tipo ?? "indicada");
@@ -99,6 +112,7 @@ export function AvecClienteDrawer({ avec, open, onClose, onUpdated }: Props) {
       });
     } else {
       setMemberProfile(null);
+      setCreditUsages([]);
     }
     // Reset form
     setTipo("indicada");
@@ -160,6 +174,33 @@ export function AvecClienteDrawer({ avec, open, onClose, onUpdated }: Props) {
     } else {
       toast.error("Erro ao atualizar tipo");
     }
+  }
+
+  async function handleUseCredit() {
+    if (!memberProfile || !useVal) return;
+    const valor = parseFloat(useVal);
+    if (valor > memberProfile.credito_disponivel) {
+      toast.error("Valor maior que o crédito disponível");
+      return;
+    }
+    setUsingCredit(true);
+    const { error } = await registerCreditUsage(createClient(), {
+      cliente_id: memberProfile.cliente_id,
+      cliente_nome: memberProfile.cliente_nome,
+      valor,
+      observacao: useObs || undefined,
+    });
+    setUsingCredit(false);
+    if (error) {
+      toast.error("Erro ao registrar uso de crédito");
+      return;
+    }
+    toast.success(`${fmt(valor)} de crédito registrados como usados`);
+    setUseVal("");
+    setUseObs("");
+    setMemberProfile((p) => (p ? { ...p, credito_disponivel: p.credito_disponivel - valor } : p));
+    fetchMemberCreditUsages(memberProfile.cliente_id).then(setCreditUsages);
+    onUpdated();
   }
 
   if (!avec) return null;
@@ -244,6 +285,55 @@ export function AvecClienteDrawer({ avec, open, onClose, onUpdated }: Props) {
                     </p>
                     <p className="text-xs text-muted-foreground">crédito</p>
                   </div>
+                </div>
+
+                {/* Registrar uso de crédito */}
+                <div className="bg-white rounded-xl p-4 shadow-sm space-y-2">
+                  <p className="text-sm font-medium text-ink">Registrar uso de crédito</p>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="R$ 0,00"
+                      value={useVal}
+                      onChange={(e) => setUseVal(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleUseCredit}
+                      disabled={usingCredit || !useVal}
+                      className="bg-ink text-gold hover:bg-ink-light h-9 px-3 flex-shrink-0"
+                    >
+                      {usingCredit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MinusCircle className="w-3.5 h-3.5" />}
+                    </Button>
+                  </div>
+                  <Input
+                    placeholder="Observação (opcional)"
+                    value={useObs}
+                    onChange={(e) => setUseObs(e.target.value)}
+                    className="h-9 text-sm"
+                  />
+                </div>
+
+                {/* Histórico de uso */}
+                <div className="bg-white rounded-xl p-4 shadow-sm space-y-1">
+                  <p className="text-sm font-medium text-ink mb-1">Histórico de uso</p>
+                  {creditUsages.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-3">Nenhum resgate registrado ainda</p>
+                  ) : (
+                    creditUsages.map((u) => (
+                      <div key={u.id} className="flex justify-between items-start py-2 border-b border-beige last:border-0">
+                        <div>
+                          <p className="text-sm font-semibold text-ink">- {fmt(u.valor)}</p>
+                          <p className="text-xs text-muted-foreground">{u.observacao ?? `Resgatado por ${u.criado_por}`}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground flex-shrink-0">
+                          {new Date(u.criado_em).toLocaleDateString("pt-BR")}
+                        </p>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 {/* Status */}
